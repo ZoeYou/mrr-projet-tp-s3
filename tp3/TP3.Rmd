@@ -1,0 +1,129 @@
+---
+title: "TP3_MRR"
+author: "You ZUO, Jingzhuo HUI"
+date: "2019/10/21"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## I.A
+```{r}
+SAheart <- read.table("http://www-stat.stanford.edu/~tibs/ElemStatLearn/datasets/SAheart.data",
+	sep=",",head=T,row.names=1)
+pairs(SAheart, pch = 22, bg = c("red", "blue")[unclass(factor(SAheart[,"chd"]))])
+```
+
+From the various joint distributions, we have remarked that the variable chd have the values either to 1 or 0, and two of some our variables have a kind of linear relation.  
+
+```{r}
+res <- glm(formula = SAheart$chd~., data = SAheart, family = binomial)
+summary(res)
+attributes(res)
+```
+```{r}
+res$coefficients
+```
+
+```{r}
+prob_y = predict.glm(object = res, type = "link") #v alue of link function
+
+ita <- function(x) {
+  return(exp(x)/(1+exp(x)))
+}
+```
+
+## I.B
+```{r}
+prob_y = predict.glm(object = res, type = "response") # probability estimation of y [0, 1]
+MAPT = 0.5
+decision_y = as.numeric(prob_y >= MAPT) # 0, 1
+```
+
+```{r}
+confusion_ma <- table(res$y, decision_y, dnn = c("real_y", "esti_y"))
+confusion_ma
+```
+
+From the matrix above, we can get TP, TN, FP and FN equal respectively to 256, 46, 77 and 83.
+
+We set two different values of MAP threshold 0.5 and 0.8, and we compare the results of confusion matrix:
+
+```{r}
+n <- sum(confusion_ma)
+performance <- sum(diag(confusion_ma))/n
+error <- (confusion_ma[1,2] + confusion_ma[2,1])/n
+FP <- confusion_ma[1,2]/(sum(confusion_ma[1,]))
+FN <- confusion_ma[1,1]/(sum(confusion_ma[1,]))
+sprintf("For mapt = 0.5, we calculate that the global performance, the error, the false positive and the false negative equal respectively to: %f, %f, %f and %f", performance, error, FP, FN )
+
+MAPT = 0.8
+decision_y = as.numeric(prob_y >= MAPT) # 0, 1
+confusion_ma <- table(res$y, decision_y, dnn = c("real_y", "esti_y"))
+n <- sum(confusion_ma)
+performance <- sum(diag(confusion_ma))/n
+error <- (confusion_ma[1,2] + confusion_ma[2,1])/n
+FP <- confusion_ma[1,2]/(sum(confusion_ma[1,]))
+FN <- confusion_ma[1,1]/(sum(confusion_ma[1,]))
+sprintf("For mapt = 0.8, we calculate that the global performance, the error, the false positive and the false negative equal respectively to: %f, %f, %f and %f", performance, error, FP, FN )
+```
+
+### K-fold
+```{r}
+library(caret)
+set.seed(123)
+K = 5
+n = nrow(SAheart)
+kfold <- floor(n/K)
+MAPT = 0.5
+lE <- as.numeric()
+
+folds5 <- createFolds(y = row.names(SAheart), k = 5)
+for (i in 1:K) {
+  ind.test <- (1+(i-1)*kfold):(i*kfold)
+  
+  modglmk <- glm(formula = chd~., family = binomial, data = SAheart[-ind.test,])
+  probk_y <- predict.glm(modglmk, type='response', newdata = SAheart[ind.test,])
+  
+  decky = as.numeric(probk_y >= MAPT) 
+  Ek <- mean(decky != SAheart[ind.test,"chd"])
+  lE <- c(lE, Ek)
+}
+
+boxplot(lE)
+```
+
+## Model selection
+```{r}
+resall <- glm(chd~., data = SAheart, family = binomial)
+res0 <- glm(chd~1, data = SAheart, family = binomial)
+resfor <- step(res0, list(upper=resall), direction = 'forward')
+print(resfor)
+```
+
+```{r}
+resback <- step(res, direction = 'backward')
+print(resback)
+```
+
+```{r}
+resstep <- step(res, direction = 'both')
+print(resstep)
+```
+
+```{r}
+formula(resfor)
+formula(resback)
+formula(resstep)
+```
+```{r}
+library(glmnet)
+ind <- sample(2, nrow(SAheart), replace = TRUE, prob = c(0.8, 0.2))
+SAheart$famhist <- as.numeric(SAheart$famhist) - 1
+
+ridge.min <- glmnet(x = SAheart, y = )
+ridge.lse
+```
+

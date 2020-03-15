@@ -1,0 +1,216 @@
+---
+title: "MRR_2019_TP3"
+author: "Jingzhuo HUI, You ZUO"
+date: "2019/10/27"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+rm(list=ls())
+```
+
+## logistic regression model
+```{r include=FALSE}
+library(MASS)
+data("UScrime")
+summary(UScrime)
+```
+
+First of all, we plotted the data with a scatterplot where the target variable medCrimeBin is represented using the color red for 0 and blue for 1.
+
+```{r}
+medCrimeBin <- as.numeric(UScrime$y>median(UScrime$y))
+UScrime <- UScrime[,-which(names(UScrime)=="y")]
+UScrime <- cbind(UScrime, medCrimeBin)
+pairs(UScrime, pch = 22, bg = c("red", "blue")[unclass(factor(UScrime[,"medCrimeBin"]))])
+```
+
+From the scatter plot above we can see that binomial variable medCrime has a distribution of given values 1 or 2, and some of the two variables have some kind of linear relation.
+
+we computed a logistic regression model of all the given variables.
+
+```{r}
+res <- glm(formula = medCrimeBin~., family = binomial, data = UScrime)
+summary(res)
+```
+
+```{r}
+prob_y = predict.glm(object = res, type = "response") # probability estimation of y [0, 1]
+MAPT = 0.5
+decision_y = as.numeric(prob_y >= MAPT) # 0, 1
+confusion_ma <- table(res$y, decision_y, dnn = c("real_y", "esti_y"))
+confusion_ma
+n <- sum(confusion_ma)
+performance <- sum(diag(confusion_ma))/n
+error <- (confusion_ma[1,2] + confusion_ma[2,1])/n
+FP <- confusion_ma[1,2]/(sum(confusion_ma[1,]))
+FN <- confusion_ma[1,1]/(sum(confusion_ma[1,]))
+sprintf("mapt = 0.5, performance=%f, error=%f, FP=%f, FN=%f", performance, error, FP, FN )
+```
+
+From the results above we can see that, the global performence is satisfied in some kind, but the target is not that significant with the variables. And since we have already noticed the linearity of some of our variables, we decide to use the model selection approaches to pick up the best variables.
+
+## Statistical approach 
+
+```{r include=FALSE}
+resall <- glm(medCrimeBin~., data = UScrime, family = binomial)
+res0 <- glm(medCrimeBin~1, data = UScrime, family = binomial)
+
+resfor <- step(res0, list(upper=resall), direction = 'forward')
+resback <- step(res, direction = 'backward')
+resstep <- step(res, direction = 'both')
+```
+
+The value of the criterian AIC of approach forward, backward and stepwise, and the coefficients selected for each model are:
+
+```{r}
+resfor$aic
+resback$aic
+resstep$aic
+
+formula(resfor)
+formula(resback)
+formula(resstep)
+```
+
+From the three methods we would like to choose the one with the smallest AIC, which is got by backward or stepwise, with variables selected: M, Ed, Po1, U1, GDP and Ineq.
+
+Let's see the capacity our this model:
+
+```{r}
+regmod_selected <- glm(formula = formula(resback), data = UScrime)
+summary(regmod_selected)
+```
+
+The significance has been improved, we are going to evaluate the predective power of this model.
+
+```{r}
+prob_y = predict.glm(object = regmod_selected, type = "response") # probability estimation of y [0, 1]
+MAPT = 0.5
+decision_y = as.numeric(prob_y >= MAPT) # 0, 1
+confusion_ma <- table(res$y, decision_y, dnn = c("real_y", "esti_y"))
+confusion_ma
+
+performance <- sum(diag(confusion_ma))/n
+error <- (confusion_ma[1,2] + confusion_ma[2,1])/n
+FP <- confusion_ma[1,2]/(sum(confusion_ma[1,]))
+FN <- confusion_ma[1,1]/(sum(confusion_ma[1,]))
+sprintf("mapt = 0.5, performance=%f, error=%f, FP=%f, FN=%f", performance, error, FP, FN )
+```
+
+According to the results above we can see that even though we have reduced the number of variables, but the performance and the error are worse than before. Remarking the FN is great higher than FP, which means we have a tendency to predict a relatively high level of crime rate place as a low crime rate one, and that could be very unrational to get this model into practice. So we could perhaps adjust the MAPT a little bit smaller to improve it.
+
+```{r}
+MAPT <- 0.45
+decision_y = as.numeric(prob_y >= MAPT) # 0, 1
+confusion_ma <- table(res$y, decision_y, dnn = c("real_y", "esti_y"))
+confusion_ma
+
+performance <- sum(diag(confusion_ma))/n
+error <- (confusion_ma[1,2] + confusion_ma[2,1])/n
+FP <- confusion_ma[1,2]/(sum(confusion_ma[1,]))
+FN <- confusion_ma[1,1]/(sum(confusion_ma[1,]))
+sprintf("mapt = 0.45, performance=%f, error=%f, FP=%f, FN=%f", performance, error, FP, FN )
+```
+
+After adjusting MAQT equal to 0.45, we have a better performance than before.
+
+## Logistic regression with l2 and l1 penalization
+### Ridge
+Instead of using the statistical approach, we are going to apply firstly $\mathcal{l_2}$ penalization and then $\mathcal{l_1}$ to regularize our model to constrain the variance of estimator and improve the prediction performance.
+
+```{r}
+library(glmnet)
+ind <- sample(2, nrow(UScrime), replace = TRUE, prob = c(0.8, 0.2))
+train.data <- UScrime[ind==1,]
+test.data <- UScrime[ind==2,]
+x <- as.matrix(train.data[,-ncol(UScrime)])
+y <- as.matrix(train.data[, "medCrimeBin"])
+
+cv.ridge <- cv.glmnet(x = x, y = y, family = "binomial", alpha = 0)
+```
+
+First we selected a $\lambda$ through 10-fold cross-validation with the minimum rule, for which the coefficients of the model are:
+
+```{r}
+ridge.min <- glmnet(x, y, alpha = 0, family = "binomial", lambda = cv.ridge$lambda.min)
+coef(ridge.min)
+```
+
+and then with the $\lambda$ by "1 standard error" rule(the most penalized model with a 1 std distance from the model with the least error), for which the coefficients of its model are:
+
+```{r}
+ridge.1se <- glmnet(x, y, alpha = 0, family = "binomial", lambda = cv.ridge$lambda.1se)
+coef(ridge.1se)
+```
+
+Using the testing data set to evaluate the two models with different value of $\lambda$:
+
+```{r message=FALSE}
+library(dplyr)
+# Make predictions on the test data
+x.test <- model.matrix(medCrimeBin ~., test.data)[,-1]
+probabilities <- ridge.min %>% predict(newx = x.test, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, "1", "0")
+# Model accuracy
+observed.classes <- test.data$medCrimeBin
+confusion_ma <- table(observed.classes, predicted.classes, dnn = c("real_y", "esti_y"))
+confusion_ma
+sprintf("For mapt = 0.5, the global performance is %f", mean(predicted.classes == observed.classes))
+```
+
+```{r}
+probabilities <- ridge.1se %>% predict(newx = x.test, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, "1", "0")
+observed.classes <- test.data$medCrimeBin
+confusion_ma <- table(observed.classes, predicted.classes, dnn = c("real_y", "esti_y"))
+confusion_ma
+sprintf("For mapt = 0.5, the global performance is %f", mean(predicted.classes == observed.classes))
+```
+
+
+
+### Lasso
+And then the same methods for $\mathcal{l_1}$ penalization procedure, the difference is that lasso can select the variables and eliminate those less "necessary" variables.
+
+```{r}
+cv.lasso <- cv.glmnet(x = x, y = y, family = "binomial", alpha = 1)
+```
+
+First we selected a $\lambda$ through 10-fold cross-validation with the minimum rule, for which the coefficients of the model are:
+
+```{r}
+lasso.min <- glmnet(x, y, alpha = 1, family = "binomial", lambda = cv.lasso$lambda.min)
+coef(lasso.min)
+```
+
+and then with the $\lambda$ by "1 standard error" rule(the most penalized model with a 1 std distance from the model with the least error), for which the coefficients of its model are:
+
+```{r}
+lasso.1se <- glmnet(x, y, alpha = 1, family = "binomial", lambda = cv.lasso$lambda.1se)
+coef(lasso.1se)
+```
+
+Using the testing data set to evaluate the two models with different value of $\lambda$:
+
+```{r message=FALSE}
+probabilities <- lasso.min %>% predict(newx = x.test, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, "1", "0")
+# Model accuracy
+observed.classes <- test.data$medCrimeBin
+confusion_ma <- table(observed.classes, predicted.classes, dnn = c("real_y", "esti_y"))
+confusion_ma
+sprintf("For mapt = 0.5, the global performance is %f", mean(predicted.classes == observed.classes))
+```
+
+```{r}
+probabilities <- lasso.1se %>% predict(newx = x.test, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, "1", "0")
+observed.classes <- test.data$medCrimeBin
+confusion_ma <- table(observed.classes, predicted.classes, dnn = c("real_y", "esti_y"))
+confusion_ma
+sprintf("For mapt = 0.5, the global performance is %f", mean(predicted.classes == observed.classes))
+```
+
+Since we have different partition of traing and testing data set each time, the values of confusion matrix are not stable. As far as we concerned, it would be more accurate if we had larger quantity of data set to make the evaluation.

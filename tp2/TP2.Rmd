@@ -1,0 +1,173 @@
+---
+title: "TP2"
+author: "Jingzhuo HUI, You ZUO"
+date: "2019/9/30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls()) 
+graphics.off()
+```
+
+## \uppercase\expandafter{\romannumeral1}
+### a)
+$$y_i=(\frac{i}{n})^3+(\frac{i}{n})^4+\epsilon_i$$
+where $\epsilon_i\sim\mathcal{N}(1,\frac{1}{4})$
+
+
+```{r}
+n <- 100
+X <- cbind(((1:n)/n)^3,((1:n)/n)^4)
+Y <- X %*% c(1,1) + rnorm(n)/4
+res <- summary(lm(Y~X))
+print(res)
+print(res$coefficients[2,4])
+```
+```{r}
+reg1 <- lm(Y~X[,1])
+print(summary(reg1))
+
+reg2 <- lm(Y~X[,2])
+print(summary(reg2))
+```
+According to the results above we notice that the significativity of the multiple regression is much less than the two simple models, for which both of our simple models have three stars for the p-value of the corresponding variable.
+
+### b)
+After executing the previous instructions several times we noticed that the significativity of the first model is not very stable, it has a fairly close relationship with our normally distrubuted random variables.
+
+```{r}
+cor(X[,1], X[,2])
+
+par(mfrow = c(1,2))
+plot(x = X[,1], y = Y)
+plot(x = X[,2], y = Y)
+```
+
+Because the correlation of the $X_1$ and $X_2$ is too strong, so our matrix to calculate the estimators $(X^{T}X)^{-1}$ could become inversible, which cause our $\beta_i$ have a tentency egale to 0. 
+```{r}
+library(matlib)
+X <- cbind(rep(1,nrow(X)),X)
+beta <- inv(t(X) %*% X) %*% t(X) %*% Y
+```
+
+## \uppercase\expandafter{\romannumeral2}
+```{r}
+library(MASS)
+data(UScrime)
+head(UScrime)
+tab <- UScrime
+plot(UScrime)
+```
+
+```{r}
+library(corrplot)
+corUC <- cor(UScrime[,-ncol(UScrime)])
+corrplot(corUC)
+```
+###A.
+```{r}
+reg <- lm(formula = y~., data = tab)
+summary(reg)
+```
+
+There are many variables which have a very high correlation of each other, and they may impact the accuracy of our model.
+
+```{r}
+RSS <- sum((tab$y - fitted(reg))^2)
+RSS
+```
+
+###B.Model selection
+First of all, we will try the backward method with criteria "AIC", which approximately egale to $n\log(\frac{RSS}{n})+2p$, and everytime 
+```{r}
+regbackward <- step(reg, direction = 'backward')
+summary(regbackward)
+```
+
+```{r}
+
+```
+
+## \uppercase\expandafter{\romannumeral3}
+
+In order to apply the same penalization value to all coefficients, it is important to scale the data before the Ridge and Lasso penalized regression.
+###a)
+
+$$X_i\sim\mathcal{N}(0,1)$$
+$$X_i = scale(X)\times\sqrt{\frac{n}{n-1}}$$
+because ${S_X}^2=\frac{\sum(x_i-\bar{X})^2}{n-1}$, thanks to what we've done before we now have 
+$$X_i = \frac{X_i-\bar{X}}{\sqrt{\frac{\sum(x_i-\bar{X})^2}{n-1}}}\times\sqrt{\frac{n}{n-1}}$$
+
+$$\begin{cases}
+\forall j,\ \bar{X}_j=0\\
+\sum {x_j}^2=n
+\end{cases}$$
+
+$k\ne j$, $<x_j,x_k>=0$
+
+
+
+```{r}
+rm(list = ls())
+n <- 10000
+p <- 5
+
+X <- matrix(rnorm(n*(p)), nrow = n, ncol = p) # matrice of 1000 * 5 variables ~ N(0, 1)
+X <- scale(X) * sqrt(n/(n-1))
+beta <- matrix(10*rev(1:p), nrow = p, ncol = 1)
+print(beta)
+
+epsi <- rnorm(n, 1/n^2)
+Y <- X %*% beta + epsi
+Z <- cbind(Y, data.frame(X))
+Z <- data.frame(Z)
+```
+###b)
+
+```{r}
+modreg <- lm(formula = Y~., data = Z)
+modreg
+summary(modreg)
+```
+```{r}
+t(X) %*% Y/n
+
+library(lars)
+library(glmnet)
+
+modlasso <- lars(X,Y,type = "lasso")
+attributes(modlasso)
+modlasso$meanx
+modlasso$normx
+
+```
+
+```{r}
+par(mfrow = c(1,2))
+plot(modlasso)
+
+plot(c(modlasso$lambda,0), pch=16, type = "b", col = "blue")
+grid()
+
+```
+
+```{r}
+print(coef(modlasso))
+coef = predict.lars(modlasso, X, type = "coefficients", mode = "lambda", s = 2500)
+coeflasso <- coef$coefficients
+par(mfrow = c(1,1))
+barplot(coeflasso, main = "lasso, l=1", col = "cyan")
+```
+
+
+```{r test}
+library(leaps)
+tmp<-regsubsets(mpg ~ wt + drat + disp + qsec, data=mtcars, nbest=1000, really.big=T, intercept=F)
+all.mods <- summary(tmp)[[1]]
+all.mods <- lapply(1:nrow(all.mods, function(x)as.formula(paste("mpg~", paste(names(which(all.mods[x,])), collapse="+"))))
+
+```
+
+

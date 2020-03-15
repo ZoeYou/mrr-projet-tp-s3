@@ -1,0 +1,125 @@
+---
+title: "TP1_MRR"
+author: "Jingzhuo HUI, You ZUO"
+date: "2019/9/27"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+rm(list=ls()) 
+graphics.off()
+```
+
+## \uppercase\expandafter{\romannumeral4} Facebook data set
+
+There are two variables in the data **facebook**, the number of months and users, a total of 14 sets of observation. We first make a linear regression model with the month as the independent variable and the number of users as the target, and here is what we get:
+```{r, include=TRUE, fig.width=5, fig.height=4, fig.align = "center"}
+setwd("~/Documents/ENSIIE/S3/MRR/tp1/Files/TP1/")
+tab<-read.table("facebookdata.txt",sep = ";",header= TRUE)
+# dim(tab)
+modreg=lm(users~.,tab)
+modreg
+summary(modreg)
+
+plot(tab$mois, tab$users, xlab = "mois", ylab = "users", col = "red", main = "-170.695 + 8.584*mois")
+grid(nx=10,ny=8,col="lightgray")
+abline(modreg, col = "blue")
+```
+
+```{r  fig.width=5, fig.height=3, fig.align = "center"}
+plot(modreg, which = 1:2)
+```
+and the predictive value of users when $mois = 80$ is:
+```{r}
+point<-data.frame(mois=80, luser = NA)
+predict(modreg,point,interval="prediction",level=0.95)
+```
+The predictive value is 516, which is even less than the users on month 78.
+
+It turns out that our linear model does not fit well with the trend of the data. The residuals are not in a small range and irregularly fluctuate around zero, but at the same time we find that the data trend is similar to the exponential curve. So we decide to transform the forme of the target $users$ into $ln(users)$
+
+```{r fig.width=5, fig.height=4, fig.align = "center"}
+tab <- cbind(tab, log(tab$users))
+tab[tab=="-Inf"] <- 0
+names(tab) <- c("mois", "users" , "Luser")
+modreg=lm(Luser~mois, tab)
+##modreg=lm(users~.,tab)
+modreg
+summary(modreg)
+
+plot(tab$mois, tab$Luser, xlab = "mois", ylab = "ln(users)", col = "red", main = "users = 0.52612 + 0.08695*ln(mois)")
+grid(nx=10,ny=8,col="lightgray")
+abline(modreg, col = "blue")
+```
+
+```{r fig.width=5, fig.height=3, fig.align = "center"}
+plot(modreg, which = 1:2)
+```
+
+Compare the results of the new model with the results of the old model, we can see that the $p-value$ of the variable **mois** is less than that of the old model, which means that the improved linear regression model is more accurate, and the relationship between the two variables is more linear. 
+
+Using the new model to predict the number of users two months after the last observation on the list, here we get:
+
+```{r}
+point<-data.frame(mois=80, luser = NA)
+exp(predict(modreg,point,interval="prediction",level=0.95))
+```
+
+We use the model to predict the number of users after two months, which is about 1776, also we get $[772, 4087]$ the interval of predicted values. But this time the predictive target is much larger than what we expected. From the results of the above figure, we can see that the closer the data is to the back, the more the trend falls below the straight line, which is why our predicted value is much larger than the true value. 
+
+This is actually the reason why our forecast value is much larger than the real value, because the number of facebook users shows an explosive growth at the beginning, which could be similar to exponential growth, but in the later period, as time goes on, the number of users gradually become stable, and as a consequence, new users growth rate will also become slow, which means that the points that follow will fall below the straight line of our model.
+
+Therefore, we conclude that linear models built with long-term user data are not applicable.
+
+## \uppercase\expandafter{\romannumeral5}. US crime data
+
+First of all, we have the data structure of data **UScrime** as below:
+```{r}
+library(MASS)
+data("UScrime")
+head(UScrime) 
+help(UScrime)
+```
+
+We establish our linear model with all the $p$ co-variables, and we also demonstrate the plots which compare the residuals and to the fitted values and a QQ-plot of the residuals:
+
+```{r fig.width=5, fig.height=3, fig.align = "center"}
+modcrime <- lm(formula = y~., data = UScrime)
+modcrime
+summary(modcrime)
+plot(modcrime,which=1:2)
+```
+
+According to the results above, we have noticed that there exist some variables which do not have a respectively high level of significativity, but we can see from the Q-Q plot that the residuals follow roughly a normal distribution. So in general our model containing all the $p$ variables is somewhat reasonable in this level.
+
+After that, we want to test the predictive ability of our model. We seperate our data set into two parts, which are the training set $\mathcal{D}_{train}$ and the testing set $\mathcal{D}_{test}$, and they account respectively for 75% and 25% of the total data. Next, we will compute the $RMSE$ of the $\mathcal{D}_{test}$ with our linear regression model established on the $\mathcal{D}_{train}$.
+
+```{r message=FALSE}
+library(hydroGOF)
+library(ggplot2)
+rmse_2 <- data.frame(rmse=NA,source=NA)
+for (i in 1:10) {
+  ind <- sample(2, nrow(UScrime),replace = TRUE,prob = c(0.75, 0.25))
+  TabTrain <- UScrime[ind==1,]
+  TabTest <- UScrime[ind==2,]
+  
+  mod.train <- lm(data = TabTrain, formula = y~.)
+  rmse_2[2*i-1,] <- cbind(rmse(fitted(mod.train), TabTrain$y),"Trainng")
+  
+  test.pre <- predict.lm(object = mod.train, newdata = TabTest)
+  rmse_2[2*i,] <- cbind(rmse(test.pre,TabTest$y), "Testing")
+}
+
+rmse_2$rmse <- as.double(rmse_2$rmse)
+
+ggplot(data = rmse_2, aes(source, rmse, fill = source, colour = source)) +
+  geom_boxplot(alpha=0.25, outlier.alpha=0) +
+  geom_jitter(fill="black", size = 0.1) +
+  stat_summary(fun.y=mean, colour="white", geom="point", shape=18, size=1) 
+```
+
+From the results above we can see that the distrubution of $RMSE$ for our different $\mathcal{D}_{test}$ is respectively more varied and the values are very high in some kind, from which the $RMSE$ of the test set is even three to four times the error of the training set, so we can think that the predicted and true values of our model have very large errors. Consequently, from the predictive point of view, the ability of our model still needs to be improved.
+
+
+

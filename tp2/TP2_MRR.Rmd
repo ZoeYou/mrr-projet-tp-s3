@@ -1,0 +1,203 @@
+---
+title: "MRR_TP2"
+author: "Zuo You &Hui Jingzhuo"
+date: "2019/10/18"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+rm(list=ls())
+```
+
+## Application THE Boston housing data set
+### (a) onload the data
+
+At the beginning, we took a fisrt sight of our data set:
+
+```{r include=FALSE}
+library(MASS)
+library(knitr)
+
+data("UScrime")
+sum <- summary(UScrime)
+kable(sum, format = "markdown", caption = "Summary of UScrime", row.names = FALSE)
+```
+
+Here we found one quantitive variable which is So, indicator variable for a Southern state. We can not conclude this kind of variable to our regression model so we just deleted it from the table.
+
+```{r fig.width=4, fig.height=3, fig.align = "center"}
+UScrime <- UScrime[,-2]
+corrplot::corrplot(cor(UScrime))
+```
+
+From the corrplot above we can see that some of the variables have a very high level of linear relations, like Po1 and Po2, U1 and U2, GDP and Ineq.
+
+For the first model, we try to build a multiple regression with all 14 the variables to explain the target:
+
+```{r include=TRUE, fig.width=5, fig.height=3, fig.align = "center"}
+modreg<-lm(y~.,UScrime)
+summary(modreg)
+plot(modreg, which = 1:2)
+```
+
+From the results above, we can say that our model is generally good, since the residuals perfectly follow the normal distribution. But in other words, there are only about 6 variables which have a certain high level of significativity, and the R-squared values are not that high, so we think there are mores things to exploit for our model.
+
+We implemented some model selection methods:
+
+```{r include=FALSE}
+regbackward = step(modreg, direction = 'backward')
+summary(regbackward)
+
+regforward = step(lm(y~1, data = UScrime), list(upper = modreg), direction = 'forward')
+summary(regforward)
+
+# regbic = step(modreg, direction = 'forward', k = log(nobs(modreg)))
+# summary(regbic)
+
+regboth = step(modreg, direction = 'both')
+summary(regboth)
+```
+
+From the summaries of our step by step methods, we find that backward and stepwise selection have the exactly same results which choose 8 variables and has $AIC = 503.93$, the forward selection choose 6 variables with $AIC=504.79$. Besides, all of them do not change so much R-squared values. Here we choose the model which use the backward selection.
+
+```{r include=TRUE}
+# ?????????
+AIC(lm(formula = regbackward, data = UScrime))
+AIC(regforward)
+# AIC(regbic)
+AIC(regboth)
+```
+
+```{r include=TRUE}
+reg = lm(formula(regbackward), data = UScrime)
+summary(reg)
+
+# Y_esti <- predict(reg,UScrime)
+# Y <- UScrime$y
+Non_biased_residual<-function(Y,Y_esti,p){
+sum=0
+for(i in seq(1,length(Y))){
+  sum<-sum+(Y_esti[i]-Y[i])^2
+}
+NBR<- sqrt(sum/(length(Y)-p+1))
+return(NBR)
+}
+# Non_biased_residual(Y,Y_esti,15)
+```
+
+
+### LASSO
+
+The next step, we try the Lasso regression:
+
+```{r include=TRUE, fig.width=4, fig.height=3, fig.align = "center"}
+library(lars)
+Y <- as.matrix(UScrime$y)
+X <- apply(as.matrix(subset(UScrime,select=-y)),2,as.numeric)
+modlasso = lars(x=X,y=Y,type="lasso")
+
+par(mfrow=c(1,2))
+plot(modlasso)
+plot(c(modlasso$lambda, 0), pch = 16, type = "b", col = "blue")
+grid()
+```
+
+From these two graphs, we can see the evolution of the values of the coefficients for different values of the penalized coefficient. And after the beta bigger than 17, the coefficients become more stable.
+
+```{r include=TRUE, fig.width=4, fig.height=3, fig.align = "center"}
+modlasso$lambda[which.min(modlasso$RSS)-1]
+```
+
+With the help of criteria RSS, we choose the lambda which is 0.5946502. And we found that the residual standard error is less than the Previous method but the difference is small.
+
+```{r include=TRUE, fig.width=4, fig.height=3, fig.align = "center"}
+coef<-predict.lars(modlasso,X,type="coefficient",mode="lambda",s=0.5946502)
+coef$coefficients
+Y_esti<-predict.lars(modlasso,X,type="fit",mode="lambda",s=0.5946502)
+Y_esti<-Y_esti$fit
+#data.frame(Y_esti,Y)
+# print("residual standard error")
+# Non_biased_residual(Y,Y_esti,15)
+```
+
+#RIDGE
+```{r include=TRUE, fig.width=4, fig.height=3, fig.align = "center"}
+library(MASS)
+modridge<-lm.ridge(y~.,data=UScrime,lambda=seq(0,10,0.01))
+plot(modridge)
+lambda<-modridge$lambda[which.min(modridge$GCV)]
+abline(v=lambda)
+plot(x=seq(0,10,0.01),modridge$GCV,xlab = "lambda")
+abline(v=lambda)
+```
+
+For the ridge regression, with the smallest GCV, wo choose the lambda which is  3.23. So we can use the regression model whose lambda equals  3.23.
+```{r include=TRUE}
+modridge<-lm.ridge(y~.,data=UScrime,lambda=lambda)
+coef<-coef(modridge)
+coef
+un<-matrix(1,nrow=length(Y),ncol=1)
+Y_esti<-cbind(un,X)%*%as.vector(coef)
+Non_biased_residual(Y,Y_esti,15)
+```
+So we obtain the result.
+
+What's more, I think about how about it with the new data.
+```{r, include=TRUE}
+smp1<-sample(nrow(UScrime), nrow(UScrime)*0.75)
+train_data=UScrime[smp1,]
+test_data=UScrime[-smp1,]
+```
+
+
+With linear regression
+```{r, include=TRUE}
+modreg<-lm(y~.,train_data)
+regbackward = step(modreg, direction = 'backward')
+reg = lm(formula(regbackward), data = train_data)
+```
+with the selection of various:
+```{r, include=TRUE}
+Y_esti<-predict(modreg,newdata=test_data)
+Y_test<-test_data$y
+Non_biased_residual(Y_test,Y_esti,9)
+```
+The linear regression backward:
+```{r, include=TRUE}
+Y_esti<-predict(reg,newdata=test_data)
+Y_test<-test_data$y
+Non_biased_residual(Y_test,Y_esti,9)
+```
+#LASSO
+
+```{r include=TRUE}
+Y<-as.matrix(train_data$y)
+X<-apply(as.matrix(subset(train_data,select=-y)),2,as.numeric)
+modlasso=lars(x=X,y=Y,type="lasso")
+X_test<-apply(as.matrix(subset(test_data,select=-y)),2,as.numeric)
+Y_esti<-predict.lars(modlasso,X_test,type="fit",mode="lambda",s=modlasso$lambda[which.min(modlasso$RSS)-1])
+Y_esti<-Y_esti$fit
+Y_test<-test_data$y
+Non_biased_residual(Y_test,Y_esti,8)
+```
+
+#Ridge
+```{r include=TRUE}
+modridge<-lm.ridge(y~.,data=train_data,lambda=seq(0,10,0.01))
+lambda<-modridge$lambda[which.min(modridge$GCV)]
+```
+
+For the ridge regression, with the smallest GCV, wo choose the lambda which is 3.23. So we can use the regression model whose lambda equals 3.23.
+```{r include=TRUE}
+modridge<-lm.ridge(y~.,data=train_data,lambda=lambda)
+X_test<-apply(as.matrix(subset(test_data,select=-y)),2,as.numeric)
+coef<-coef(modridge)
+Y_test<-test_data$y
+un<-matrix(1,nrow=length(Y_test),ncol=1)
+Y_esti<-cbind(un,X_test)%*%as.vector(coef)
+Non_biased_residual(Y_test,Y_esti,8)
+```
+That's all. I find that for these data, the linear regression backward and the lasso regression is better than Ridge regression. And the normal linear regression fit the new data worse.
+
+

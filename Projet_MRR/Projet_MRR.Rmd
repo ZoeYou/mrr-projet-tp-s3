@@ -1,0 +1,886 @@
+---
+title: "Projet_MRR"
+author: "You ZUO, Jingzhuo HUI"
+date: "2019/12/15"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+rm(list=ls())
+```
+
+## Presention of dataset
+```{r message=FALSE}
+# onload the four data set
+tempdl <- tempfile()
+download.file("https://archive.ics.uci.edu/ml/machine-learning-databases/00494/WECs_DataSet.zip",tempdl, mode="wb") 
+zz <- unzip(zipfile = tempdl) 
+Adelaide_Data <- read.csv(file = zz[[1]], header = FALSE)
+Perth_Data <- read.csv(file = zz[[2]], header = FALSE)
+Sydney_Data <- read.csv(file = zz[[3]], header = FALSE)
+Tasmania_Data <- read.csv(file = zz[[4]], header = FALSE)
+```
+
+```{r}
+# give names of attributes for each data set
+attr <- c()
+for (car in c("X", "Y", "P")) {
+  for (nb in 1:16) {
+    attr <- append(attr, paste(car, nb, sep = ""))
+  }
+}
+attr <- append(attr, "Powerall")
+
+list.data <- c("Adelaide_Data", "Perth_Data", "Sydney_Data", "Tasmania_Data")
+
+colnames(Adelaide_Data) <- attr
+colnames(Perth_Data) <- attr
+colnames(Sydney_Data) <- attr
+colnames(Tasmania_Data) <- attr
+# eval(parse(text = list.data)) // something not useful 
+```
+
+```{r}
+# Detection of missing values and abnormal values
+sum(is.na(x = Adelaide_Data))
+sum(is.na(x = Perth_Data))
+sum(is.na(x = Sydney_Data))
+sum(is.na(x = Tasmania_Data))
+```
+
+Here in these data sets, they do not have explicit missing values like "NA," . Then we are going to verify if there exist some abnormal values.
+
+```{r}
+# Make sure if all the positions are in the appropriate range [0, 566]
+is.inrange <- function(data = Tasmania_Data){
+  res <- matrix(data = NA, nrow = 0, ncol = 3)
+  colnames(res) <- c("data", "nbrow", "indice")
+  for (nbrow in 1:nrow(data)) {
+    for (nbcol in 1:32) {
+      if(data[nbrow,nbcol]<0||data[nbrow,nbcol]>566){
+        res <- rbind(res, c(data[nbrow,nbcol], nbrow, nbcol))
+      }
+    }
+  }
+  if(nrow(res)==0){
+    return(TRUE)
+  }else{
+    return(res)
+  }
+}
+
+is.inrange(Adelaide_Data)
+is.inrange(Perth_Data)
+is.inrange(Sydney_Data)
+is.inrange(Tasmania_Data)
+
+kableExtra::kable(x = is.inrange(Sydney_Data), format = "markdown", caption = "Values beyond the boundary of Sydney_Data")
+```
+
+From the results above, we find that only Sydney_Data has some abnormal records, which we are going to remove from the data set. 
+
+```{r}
+ligne_supprime <- is.inrange(Sydney_Data)
+ligne_supprime <- unique(ligne_supprime[,'nbrow'])
+
+Sydney_Data <- Sydney_Data[-ligne_supprime,]
+```
+
+
+## Basic summary of the data
+https://stackoverflow.com/questions/14604439/plot-multiple-boxplot-in-one-graph
+First, we draw some boxplots of positions and powers in different coasts:
+
+```{r warning=FALSE}
+library(ggplot2)
+# function to tranform the data structure for boxplot
+for.boxplot <- function(dataset = Adelaide_Data) {
+  rtn <- matrix(ncol = 3, nrow = 0, data = NA)
+  for (k in 1:16) {
+    rtn <- rbind(rtn, cbind(rep("X", nrow(dataset)), rep(paste("WEC", ifelse(k<10,paste("0",k,sep = ""), k), sep = ""), nrow(dataset)), dataset[,k]))
+    rtn <- rbind(rtn, cbind(rep("Y", nrow(dataset)), rep(paste("WEC", ifelse(k<10,paste("0",k,sep = ""), k), sep = ""), nrow(dataset)), dataset[,16+k]))
+    rtn <- rbind(rtn, cbind(rep("P", nrow(dataset)), rep(paste("WEC", ifelse(k<10,paste("0",k,sep = ""), k), sep = ""), nrow(dataset)), dataset[,2*16+k]))
+  }
+  colnames(rtn) <-  c("Label", "variable", "value")
+  rtn <- as.data.frame(rtn)
+  rtn$value <- as.double((as.matrix(rtn$value)))
+  return(rtn)
+}
+
+# implement this function to four datasets
+boxdata.ade <- for.boxplot(Adelaide_Data)
+boxdata.per <- for.boxplot(Perth_Data)
+boxdata.syd <- for.boxplot(Sydney_Data)
+boxdata.tas <- for.boxplot(Tasmania_Data)
+```
+
+
+```{r}
+library(dplyr)
+# function to filter only the locations or only the powers
+# "l" for locations and "p" for powers
+select.label <- function(dataset = boxdata.ade, label = "l") {
+  if(label == "l"){
+     res <- filter(dataset, Label == "X" | Label == "Y")
+  }else if(label == "p"){
+    res <- filter(dataset, Label == "P")
+  }else{
+    return(FALSE)
+  }
+  return(as.data.frame.matrix(res))
+}
+```
+
+
+```{r}
+ade.locs <- select.label(boxdata.ade, "l")
+ade.pows <- select.label(boxdata.ade, "p")
+boxlocs.ade <- ggplot(data = ade.locs, aes(x=variable, y=value)) + 
+  geom_boxplot(aes(fill=Label)) +
+  facet_wrap( ~ variable, scales="free") +
+  ggtitle("Position coordinates of WECs in Adelaide")
+boxlocs.ade 
+boxpows.ade <- ggplot(ade.pows) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "#6baed6") +
+  theme_bw() +
+  ggtitle("Power of WECs in Adelaide")
+boxpows.ade
+
+per.locs <- select.label(boxdata.per, "l")
+per.pows <- select.label(boxdata.per, "p")
+boxlocs.per <- ggplot(data = per.locs, aes(x=variable, y=value)) + 
+  geom_boxplot(aes(fill=Label)) +
+  facet_wrap( ~ variable, scales="free") +
+  ggtitle("Position coordinates of WECs in Perth")
+boxlocs.per 
+boxpows.per <- ggplot(per.pows) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "#6baed6") +
+  theme_bw() +
+  ggtitle("Power of WECs in Perth")
+boxpows.per
+
+syd.locs <- select.label(boxdata.syd, "l")
+syd.pows <- select.label(boxdata.syd, "p")
+boxlocs.syd <- ggplot(data = syd.locs, aes(x=variable, y=value)) + 
+  geom_boxplot(aes(fill=Label)) +
+  facet_wrap( ~ variable, scales="free") +
+  ggtitle("Position coordinates of WECs in Sydney")
+boxlocs.syd 
+boxpows.syd <- ggplot(syd.pows) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "#6baed6") +
+  theme_bw() +
+  ggtitle("Power of WECs in Sydney")
+boxpows.syd
+
+tas.locs <- select.label(boxdata.tas, "l")
+tas.pows <- select.label(boxdata.tas, "p")
+boxlocs.tas <- ggplot(data = tas.locs, aes(x=variable, y=value)) + 
+  geom_boxplot(aes(fill=Label)) +
+  facet_wrap( ~ variable, scales="free") +
+  ggtitle("Position coordinates of WECs in Tasmania")
+boxlocs.tas 
+boxpows.tas <- ggplot(tas.pows) +
+  aes(x = variable, y = value) +
+  geom_boxplot(fill = "#6baed6") +
+  theme_bw() +
+  ggtitle("Power of WECs in Tasmania")
+boxpows.tas
+```
+From the 8 plots above we can see that the distrubution of the buoys in Adelaide, perth and Tasmania are stable, while in Sydney it is relatively unstable and has larger range. Also, we found that the collected energy is also distributed differently on different coasts. Tasmania has the highest energy of about 230,000 watts, followed by Sydney's farm, the energy there collected by each buoy is about 90,000 to 97,000 watts. Finally, Perth and Adelaide's energy values are similar, which is about 90,000 watts.
+
+In fact, from the third report given in the repository, we can know that the layout for the Sydney wave scenario differs markedly in its spacing and orientation. Because the Sydney wave environment is more varied in terms of wave direction and, thus, opportunities to exploit constructive interactions through a static layout are much reduced. As a result, the optimization runs produced layouts where the buoys are well-spaced, which minimizes destructive interactions.
+
+```{r}
+# Powerall boxplot
+Powerall4 <- cbind(Adelaide.pAll = Adelaide_Data$Powerall, 
+                   Perth.pAll = Perth_Data$Powerall, 
+                   Sydney.pAll = Sydney_Data$Powerall, 
+                   Tasmanis.pAll = Tasmania_Data$Powerall)
+PowerALL <- melt(Powerall4)
+ggplot(PowerALL) +
+ aes(x = Var2, y = value) +
+ geom_boxplot(fill = "#0c4c8a") +
+ labs(x = "Location", y = "Powerall") +
+ theme_minimal()
+```
+
+
+## Correlation of variables
+https://zhuanlan.zhihu.com/p/36925332
+```{r}
+library(corrplot)
+M <- cor(Adelaide_Data)
+corrplot(M, order = "AOE", type = "upper", tl.pos = "d")
+corrplot(M, add = TRUE, type = "lower", method = "number", order = "AOE",
+diag = FALSE, tl.pos = "n", cl.pos = "n")
+
+res1 <- cor.mtest(Adelaide_Data, conf.level = 0.95)
+corrplot(M, method="ellipse",p.mat = res1$p, sig.level = 0.2,order = "AOE", type = "upper", tl.pos = "d")
+corrplot(M, add = TRUE, p.mat = res1$p, sig.level = 0.2,type = "lower", method = "number", order = "AOE",
+diag = FALSE, tl.pos = "n", cl.pos = "n")
+```
+:)
+
+```{r}
+library(gclus)
+judge.cor <- cor(Adelaide_Data)
+judge.color <- dmat.color(judge.cor)
+cpairs(Adelaide_Data,panel.colors=judge.color,pch=".",gap=.5)
+```
+:)
+
+Since we have to many variables, it is almost possible to visualize clearly their correlations by plot, we would better analyse it by the correlation matrix.
+
+```{r}
+# return the position in the matrix if the value is not less than 0.5
+for (i in 1:nrow(M)) {
+  for(j in i:ncol(M)) {
+    if(M[i,j] >= 0.5 & M[i,j] != 1){
+      print(paste(i,j,M[i,j]))
+    }
+  }
+}
+```
+First, we can see from the results of the correlation matrix that among all 49 variables, only one set of data has a correlation coefficient of more than 0.5, so it can be determined that the correlation between the original data is very small. Secondly, the correlation analysis can be said to be of no practical significance to our original data, because the research background has determined that we cannot delete the measurement value of any buoy for correlation reasons.
+
+
+## Representation of distrubution of buoys in the wave farm
+
+We select some observations of the best and the worst solutions and some normal ones.
+```{r}
+# Fisrt we need to transform the structure of our dataset in order to make the plots
+# function to tranform the selected line observation of dataset
+for.obsplot <- function(dataset = Adelaide_Data, line.selected = 1) {
+  rtn <- matrix(ncol = 3, nrow = 16, dimnames = list(sapply(1:16, function(k){paste("WEC", ifelse(k<10,paste("0",k,sep = ""), k), sep = "")}), c("X", "Y", "P")))
+  for(k in 1:16) {
+    rtn[k,] <- c(dataset[line.selected,k], dataset[line.selected,16+k], dataset[line.selected,2*16+k])
+  }
+  rtn <- as.data.frame(rtn)
+  rtn <- data.frame(WECname = rownames(rtn), rtn)
+  rownames(rtn) <- 1:nrow(rtn)
+  return(list(rtn, Powerall = dataset[line.selected, ncol(dataset)]))
+}
+```
+
+Now we want to sample some observations and to represent them in graphs, but we also want to see if there exists some particular distribution for those placements with the highest Powerall or the highest q-factor. So we have to calculate the q-factor for each placement. 
+
+```{r}
+# function to calculate the q-factor(most of them are next to 1) for a dataframe
+calq <- function(dataset = Adelaide_Data) {
+  res <- c()
+  for (i in 1:nrow(dataset)) {
+    Powersum <- sum(dataset[i, (32+1):48])
+    Powerall <- dataset[i, ncol(dataset)]
+    res <- append(res, Powersum/Powerall)
+  }
+  return(res)
+}
+```
+
+```{r}
+library(ggrepel)
+library(ggpubr)
+# select the placement with the highest Powerall
+max.ade <- Adelaide_Data[which.max(Adelaide_Data$Powerall),]
+max.per <- Perth_Data[which.max(Perth_Data$Powerall),]
+max.syd <- Sydney_Data[which.max(Sydney_Data$Powerall),]
+max.tas <- Tasmania_Data[which.max(Tasmania_Data$Powerall),]
+
+obs.ade <- for.obsplot(Adelaide_Data, as.integer(rownames(max.ade)))[[1]]
+obs.per <- for.obsplot(Perth_Data, as.integer(rownames(max.per)))[[1]]
+obs.syd <- for.obsplot(Sydney_Data, as.integer(rownames(max.syd)))[[1]]
+obs.tas <- for.obsplot(Tasmania_Data, as.integer(rownames(max.tas)))[[1]]
+
+plcm.ade <- ggplot(obs.ade, aes(x = X, y = Y, colour = P, size = P)) +
+  geom_point() +
+  scale_color_gradient() +
+  scale_color_distiller(palette = "RdBu") +
+  theme_bw() +
+  geom_text_repel(aes(label=WECname), size=3)
+plcm.per <- ggplot(obs.per, aes(x = X, y = Y, colour = P, size = P)) +
+  geom_point() +
+  scale_color_gradient() +
+  scale_color_distiller(palette = "RdBu") +
+  theme_bw() +
+  geom_text_repel(aes(label=WECname), size=3)
+plcm.syd <- ggplot(obs.syd, aes(x = X, y = Y, colour = P, size = P)) +
+  geom_point() +
+  scale_color_gradient() +
+  scale_color_distiller(palette = "RdBu") +
+  theme_bw() +
+  geom_text_repel(aes(label=WECname), size=3)
+plcm.tas <- ggplot(obs.tas, aes(x = X, y = Y, colour = P, size = P)) +
+  geom_point() +
+  scale_color_gradient() +
+  scale_color_distiller(palette = "RdBu") +
+  theme_bw() +
+  geom_text_repel(aes(label=WECname), size=3)
+
+ggarrange(plcm.ade,plcm.per,plcm.syd,plcm.tas,ncol=2,nrow=2,labels=c("Adelaide","Perth","Sydney","Tasmania"))
+```
+From the above results of these optimal placements, we can see that for Perth, Adelaide and Tasmania the layouts are similar with the buoys being oriented in a line roughly normal to the prevailing wave direction with buoys placed in phase 1 (lower numbers) forming a bottom row and the buoys placed in phase 2 (higher numbers) behind these. It can be seen that fewer buoys are placed in phase 1 for Tasmania than for Adelaide. This appears to be due to an interaction between the wave orientation and the shape of the farm – with the Adelaide layout better aligned to the diagonal of the farm area. 
+
+The layout produced for the Sydney wave scenario is very different from the with a row for phase 1 oriented to the east and the other buoys being placed at large distances from the others. This pattern was observed for a number of Sydney runs where the best layouts tended to contain widely dispersed buoys to minimize destructive interference.
+
+Now we randomly select one observation in each data set (different coasts):
+
+```{r}
+obs.ade <- for.obsplot(Adelaide_Data, sample(1:nrow(Adelaide_Data),1))[[1]]
+obs.per <- for.obsplot(Perth_Data, sample(1:nrow(Perth_Data),1))[[1]]
+obs.syd <- for.obsplot(Sydney_Data, sample(1:nrow(Sydney_Data),1))[[1]]
+obs.tas <- for.obsplot(Tasmania_Data, sample(1:nrow(Tasmania_Data),1))[[1]]
+
+plcm.ade <- ggplot(obs.ade, aes(x = X, y = Y, colour = P, size = P)) +
+  geom_point() +
+  scale_color_gradient() +
+  scale_color_distiller(palette = "RdBu") +
+  theme_bw() +
+  geom_text_repel(aes(label=WECname), size=3)
+plcm.per <- ggplot(obs.per, aes(x = X, y = Y, colour = P, size = P)) +
+  geom_point() +
+  scale_color_gradient() +
+  scale_color_distiller(palette = "RdBu") +
+  theme_bw() +
+  geom_text_repel(aes(label=WECname), size=3)
+plcm.syd <- ggplot(obs.syd, aes(x = X, y = Y, colour = P, size = P)) +
+  geom_point() +
+  scale_color_gradient() +
+  scale_color_distiller(palette = "RdBu") +
+  theme_bw() +
+  geom_text_repel(aes(label=WECname), size=3)
+plcm.tas <- ggplot(obs.tas, aes(x = X, y = Y, colour = P, size = P)) +
+  geom_point() +
+  scale_color_gradient() +
+  scale_color_distiller(palette = "RdBu") +
+  theme_bw() +
+  geom_text_repel(aes(label=WECname), size=3)
+
+ggarrange(plcm.ade,plcm.per,plcm.syd,plcm.tas,ncol=2,nrow=2,labels=c("Adelaide","Perth","Sydney","Tasmania"))
+```
+
+For these arbitrarily chosen placements, we can observe that their placement is more lacking in intuitive rules, but perhaps their placement presents a distribution that we will explore later.
+
+## Sort the coordinates by distancecs 
+
+
+```{r}
+library(grid)
+obs.nb <- sample(1:nrow(Adelaide_Data),1)
+obs.ade <- for.obsplot(Adelaide_Data, obs.nb)[[1]]
+
+plcm.ade +
+  xlim(0,566) + ylim(0,566) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2, col = "red") +
+  geom_abline(intercept = 566, slope = -1, linetype = 2, col = "blue") +
+  annotate('segment', x=0, xend=4, y=0, yend=4, arrow=arrow(length = unit(0.25, "inches")),col="red") +
+  annotate('segment', x=566, xend=562, y=0, yend=4, arrow=arrow(length = unit(0.25, "inches")),col="blue")
+
+sort.Paradiagonal(Adelaide_Data, obs.nb)
+sort.Diagonal(Adelaide_Data, obs.nb)
+```
+
+First we calculate the order along the paradiagonal direction, we consider the point $(566,0)$ as our coordinate origin, We sort the positions of buoys according to their distance from the original point.
+```{r}
+library(data.table)
+sort.Diagonal <- function(dataset = Adelaide_Data, line = 1) {
+  x0 <- 566
+  y0 <- 0
+  data <- dataset[line,]
+  dists <- sapply(1:16, function(k){
+    sqrt((data[,k]-x0)^2+(data[,16+k]-y0)^2)
+  })
+  
+  return(sort(dists))
+}
+
+sort.Paradiagonal <- function(dataset = Adelaide_Data, line = 1) {
+  x0 <- 0
+  y0 <- 0
+  data <- dataset[line,]
+  dists <- sapply(1:16, function(k){
+    sqrt((data[,k]-x0)^2+(data[,16+k]-y0)^2)
+  })
+
+  return(sort(dists))
+}
+
+sort.Paradiagonal(Adelaide_Data, as.integer(rownames(max.ade)))
+sort.Diagonal(Adelaide_Data, as.integer(rownames(max.ade)))
+```
+
+Then we are going to tranform the four data.frame, since we have just too much data in one dataset and it takes a lot time ??
+
+```{r}
+trans.origdata <- function(dataset = Adelaide_Data[1:10,]) {
+  toMerge <- as.data.frame(matrix(NA,nrow = 0,ncol = 32))
+  
+  for (i in 1:nrow(dataset)) {
+      resD <- sort.Diagonal(dataset,i)
+      resP <- sort.Paradiagonal(dataset,i)
+      toMerge <- rbind(toMerge, append(resD, resP))
+  }
+    colnames(toMerge) <- c(sapply(1:16, function(i){paste("D_",i,sep = "")}),
+                         sapply(1:16, function(i){paste("P_",i,sep = "")}))
+    rtn <- cbind(toMerge, Powerall = dataset[,ncol(dataset)])
+}
+
+# Data_ade <- trans.origdata(Adelaide_Data)
+# Data_per <- trans.origdata(Perth_Data)
+# Data_syd <- trans.origdata(Sydney_Data)
+# Data_tas <- trans.origdata(Tasmania_Data)
+
+# write.csv(Data_ade, file = "WECs_DataSet/Data_ade.csv", row.names = F)
+# write.csv(Data_per, file = "WECs_DataSet/Data_per.csv", row.names = F)
+# write.csv(Data_syd, file = "WECs_DataSet/Data_syd.csv", row.names = F)
+# write.csv(Data_tas, file = "WECs_DataSet/Data_tas.csv", row.names = F)
+
+Data_ade <- read.csv(file = "WECs_DataSet/Data_ade.csv")
+Data_per <- read.csv(file = "WECs_DataSet/Data_per.csv")
+Data_syd <- read.csv(file = "WECs_DataSet/Data_syd.csv")
+Data_tas <- read.csv(file = "WECs_DataSet/Data_tas.csv")
+kable(head(Data_ade))
+```
+
+Before implementing any method of regression to our dataset, we want to summary the correlations between our new features:
+
+```{r}
+res1 <- cor.mtest(Data_ade, conf.level = 0.95)
+M <- cor(Data_ade)
+
+corrplot(M, method="ellipse",p.mat = res1$p, sig.level = 0.05, type = "upper", tl.pos = "d")
+corrplot(M, add = TRUE, p.mat = res1$p, sig.level = 0.05,type = "lower", method = "number",
+diag = FALSE, tl.pos = "n", cl.pos = "n")
+```
+Here the function has used "AOE" to order our variables in the matrix, "AOE" is the angular order of the eigenvectors. It is calculated from the order of the angles, $a_i$:
+
+$$a_i=tan\frac{e_{i2}}{e_{i1}},\ if\ e_{i1}>0$$
+$$a_i=tan\frac{e_{i2}}{e_{i1}}+\pi,\ otherwise$$
+
+And from the corrplot above, we can see that the correlations between our new features are pretty high compared with what we got from our original variables. It is an excellent news because we can consequently build a baseline model and then reduce the number of variables thanks to the correlation between features.
+
+However, there is one step left before making models. Since we have four dataset, each table has exactly the same structure except that they were measured in different wave scenarios, so if we want to use all our data sets as a whole, which also means we combine the four sets into one, we have to add a variable "location". The variable has 4 possibilities: Adelaide, Perth, Sydney and Tasmania. Tu build a multiple regression model with such a categorical variable, we need to introduce dummy variables. Amd these dummy variables allow us to identify which of the four scenarios an individual falls into.
+https://www.youtube.com/watch?v=2s8AwoKZ-UE
+
+Categorical variable with 4-levels or categories, requires (4-1) dummy or indicator variables. "Variable muette"
+
+```{r warning=FALSE}
+tab <- bind_rows(data.frame(location = rep("Adelaide",nrow(Data_ade)), Data_ade),
+                 data.frame(location = rep("Perth",nrow(Data_per)), Data_per),
+                 data.frame(location = rep("Sydney",nrow(Data_syd)), Data_syd),
+                 data.frame(location = rep("Tasmania",nrow(Data_tas)), Data_tas))
+tab$location <- as.factor(tab$location)
+
+head(tab)
+levels(tab$location) # requires 3 indicator variables
+table(tab$location)
+```
+
+```{r}
+mean(tab$Powerall[tab$location=="Adelaide"])
+mean(tab$Powerall[tab$location=="Perth"])
+mean(tab$Powerall[tab$location=="Sydney"])
+mean(tab$Powerall[tab$location=="Tasmania"])
+
+summary(lm(formula = Powerall~location, data = tab))
+```
+
+## Regression Model
+
+Now we are going to establish a baseline model with all the new variables:
+
+```{r}
+regmod <- lm(formula = Powerall~., data = tab)
+summary(regmod)
+
+par(mfrow=c(2,2))
+plot(regmod)
+```
+
+It looks like this model has pretty good results because almost every variable has a very high level of significance; the R-squared value is very high, too, which is so close to 1. However, after looking at its diagnostic plots, we realized that it might not be a good idea to combine all the data from different scenarios together to build our model. Because, from the first plot, we found that there are three locations have similar wave energy levels, while the data collected from Tasmania are much higher than the others. Objectively speaking, our target "Powerall" will have a large blank interval because of the combination, which would also lead to the inaccuracy of the model. So finally, we decided to build a linear model only for one location each time. Besides, except for the nuances of the methods due to the characteristics of the data itself, they have almost entirely similar processes, so we ended up choosing only the first set of data for model building.
+
+```{r}
+set.seed(3)
+ind <- sample(2, nrow(Data_ade)/10, replace = TRUE, prob = c(0.7, 0.3))
+
+training.data <- Data_ade[ind==1,]
+testing.data <- Data_ade[ind==2,]
+
+regmod.ade <- lm(formula = Powerall~., data = training.data)
+summary(regmod.ade)
+
+
+plot(regmod.ade)
+```
+
+According to the results of the baseline model of Adelaide data, we can see that the R-squared is about 0.8, which is pretty good. While, some of the variables have very high p-value, which indicates that they have respectively low significance level and could be taken away when making variable selections. Then look at the diagnostic plots, the residuals are well distributed in a normal distribution. However, in the first plot of fitted values to their corresponding residual, the line is relatively curved, and it infers that the model needs to be improved.
+
+## Step by Step Selection
+
+```{r include=FALSE}
+# with criterion AIC
+regforward.aic <- step(lm(Powerall~1, data = training.data), direction = "forward", scope = formula(regmod.ade), trace = F)
+regboth <- step(regmod.ade, direction = "both", scope = formula(regmod.ade), trace = F)
+regbackward.aic <- step(regmod.ade, data = training.data, direction = "backward", trace = F)
+# BIC
+regforward.bic <- step(lm(Powerall~1, data = training.data), direction = "forward", scope = formula(regmod.ade), trace = F, k = log(nrow(training.data)))
+regbackward.bic <- step(regmod.ade, data = training.data, direction = "backward", trace = F, k = log(nrow(training.data)))
+
+```
+
+*But how to choose between them?*
+**1. how to choose a backward or forward seletion**
+If the regressors are independent the final model will be the same regardless forward or backwards.
+ 
+**2. how to choose the criterion**
+https://stats.stackexchange.com/questions/577/is-there-any-reason-to-prefer-the-aic-or-bic-over-the-other
+
+Clearly, AIC does not depend directly on sample size. Moreover, generally speaking, AIC presents the danger that it might overfit, whereas BIC presents the danger that it might underfit, simply in virtue of how they penalize free parameters (2*k in AIC; ln(N)*k in BIC). Diachronically, as data is introduced and the scores are recalculated, at relatively low N (7 and less) BIC is more tolerant of free parameters than AIC, but less tolerant at higher N (as the natural log of N overcomes 2).
+
+Additionally, AIC is aimed at finding the best approximating model to the unknown data generating process (via minimizing expected estimated K-L divergence). As such, it fails to converge in probability to the true model (assuming one is present in the group evaluated), whereas BIC does converge as N tends to infinity.
+
+```{r}
+summary(regbackward.aic) 
+summary(regbackward.bic) 
+
+summary(regforward.aic) 
+summary(regforward.bic) 
+``` 
+
+We have also tried the direction "stepwise", but it had the same results with other two directions(depends on the starting status), so we will not consider it later.
+
+```{r}
+regbackward.aic$call #25 0.8353 22780
+regbackward.bic$call #21 0.8352 22790
+
+regforward.aic$call #25 0.8353 22780
+regforward.bic$call #21 0.8352 22790
+```
+
+From the results below, we can make a little remark that:
+
+* 1. for both direction "backward" and "forward", AIC criterion selected 25 variables from all 32 variables while BIC selected only 21 of them. 
+* 2. All the models have 22770 as their RSE.
+* 3. models of AIC have similiar value of R-squared equal to 0.8353, models of BIC 0.8352
+* 4. for forward direction, the first variables have the same order but not the same case for that of backward
+
+```{r rien_a_voir}
+par(mfrow=c(1,2))
+pre.test <- predict(object = regbackward.bic, newdata = testing.data)
+plot(x = testing.data$Powerall, y = (pre.test-testing.data$Powerall), xlab = "Fitted values", ylab = "error", main = "regbackward.bic")
+abline(a = 0, b = 0, col = "red")
+qqnorm(pre.test-testing.data$Powerall)
+qqline(pre.test-testing.data$Powerall,col="red")
+
+par(mfrow=c(1,2))
+pre2.test <- predict(object = regbackward.aic, newdata = testing.data)
+plot(x = testing.data$Powerall, y = (pre2.test-testing.data$Powerall), xlab = "Fitted values", ylab = "error", main = "regbackward.aic")
+abline(a = 0, b = 0, col = "red")
+qqnorm(pre2.test-testing.data$Powerall)
+qqline(pre2.test-testing.data$Powerall,col="red")
+
+par(mfrow=c(1,2))
+pre3.test <- predict(object = regforward.bic, newdata = testing.data)
+plot(x = testing.data$Powerall, y = (pre3.test-testing.data$Powerall), xlab = "Fitted values", ylab = "error", main = "regforward.bic")
+abline(a = 0, b = 0, col = "red")
+qqnorm(pre3.test-testing.data$Powerall)
+qqline(pre3.test-testing.data$Powerall,col="red")
+
+par(mfrow=c(1,2))
+pre4.test <- predict(object = regforward.aic, newdata = testing.data)
+plot(x = testing.data$Powerall, y = (pre4.test-testing.data$Powerall), xlab = "Fitted values", ylab = "Risuduals", main = "regforward.bic")
+abline(a = 0, b = 0, col = "red")
+qqnorm(pre4.test-testing.data$Powerall)
+qqline(pre4.test-testing.data$Powerall,col="red")
+
+```
+
+```{r warning=FALSE}
+stepmodels <- bind_rows(data.frame(model = rep("regbackward.bic",length(pre.test)),error = pre.test-testing.data$Powerall),
+          data.frame(model = rep("regbackward.aic",length(pre2.test)),error = pre2.test-testing.data$Powerall),
+          data.frame(model = rep("regforward.bic",length(pre3.test)),error = pre3.test-testing.data$Powerall),
+          data.frame(model = rep("regforward.aic",length(pre4.test)),error = pre4.test-testing.data$Powerall))
+ggplot(data = stepmodels, aes(model, error, fill = model, colour = model)) +
+  geom_boxplot(alpha=0.25, outlier.alpha=0) +
+  geom_jitter(fill="black", size = 0.1) +
+  stat_summary(fun.y=mean, colour="white", geom="point", shape=18, size=1) 
+```
+
+We could use the forward or backward selection for this, but that way we would not be able to tell anything about the removed variables' effect on the response.
+
+## RIDGE and/or LASSO penalized regression
+
+
+```{r Ridge}
+library(dplyr)
+library(glmnet)
+library(MASS)
+
+modridge<-lm.ridge(Powerall~.,data=training.data,lambda=seq(0,200,0.01))
+lambda<-modridge$lambda[which.min(modridge$GCV)]
+
+par(mfrow=c(1,2))
+plot(modridge)
+abline(v=lambda)
+
+plot(x=seq(0,200,0.01),modridge$GCV,xlab = "lambda")
+abline(v=lambda)
+```
+
+```{r}
+# Center y, X will be standardized in the modelling function
+y <- training.data[,"Powerall"] %>% scale(center = TRUE, scale = FALSE) %>% as.matrix()
+X <- training.data[,-ncol(training.data)] %>% as.matrix()
+# Perform 10-fold cross-validation to select lambda ---------------------------
+lambdas_to_try <- 10^seq(-3, 5, length.out = 100)
+# Setting alpha = 0 implements ridge regression
+ridge_cv <- cv.glmnet(X, y, alpha = 0, lambda = lambdas_to_try,
+                      standardize = TRUE, nfolds = 10)
+# Plot cross-validation results
+plot(ridge_cv)
+
+y.test <- testing.data[,"Powerall"] %>% scale(center = TRUE, scale = FALSE) %>% as.matrix()
+
+# Best cross-validated lambda
+lambda_cv <- ridge_cv$lambda.min
+# Fit final model, get its sum of squared residuals and multiple R-squared
+model_cv <- glmnet(X, y, alpha = 0, lambda = lambda_cv, standardize = TRUE)
+y_hat_cv <- predict(model_cv, (testing.data[,-ncol(testing.data)] %>% as.matrix()))
+ssr_ridge_cv <- RMSE(y.test,y_hat_cv)
+rsq_ridge_cv <- cor(y.test, y_hat_cv)^2
+ 
+
+# See how increasing lambda shrinks the coefficients --------------------------
+# Each line shows coefficients for one variables, for different lambdas.
+# The higher the lambda, the more the coefficients are shrinked towards zero.
+res <- glmnet(X, y, alpha = 0, lambda = lambdas_to_try, standardize = FALSE)
+plot(res, xvar = "lambda")
+legend("bottomright", lwd = 1, col = 1:6, legend = colnames(X), cex = .7)
+```
+
+```{r Lasso}
+# Perform 10-fold cross-validation to select lambda ---------------------------
+lambdas_to_try <- 10^seq(-3, 5, length.out = 100)
+# Setting alpha = 1 implements lasso regression
+lasso_cv <- cv.glmnet(X, y, alpha = 1, lambda = lambdas_to_try,
+                      standardize = TRUE, nfolds = 20)
+
+# Best cross-validated lambda
+lambda_cv <- lasso_cv$lambda.min
+# Fit final model, get its sum of squared residuals and multiple R-squared
+model_cv <- glmnet(X, y, alpha = 1, lambda = lambda_cv, standardize = TRUE)
+y_hat_cv <- predict(model_cv, (testing.data[,-ncol(testing.data)] %>% as.matrix()))
+ssr_lasso_cv <- RMSE(y.test,y_hat_cv)
+rsq_lasso_cv <- cor(y.test, y_hat_cv)^2
+
+# Plot cross-validation results
+
+plot(lasso_cv)
+# See how increasing lambda shrinks the coefficients --------------------------
+# Each line shows coefficients for one variables, for different lambdas.
+# The higher the lambda, the more the coefficients are shrinked towards zero.
+res <- glmnet(X, y, alpha = 1, lambda = lambdas_to_try, standardize = FALSE)
+plot(res, xvar = "lambda")
+legend("bottomright", lwd = 1, col = 1:6, legend = colnames(X), cex = .7)
+```
+
+```{r Elastic_Net}
+library(caret)
+data_enet <- data.frame(X,Powerall = y)
+
+# Set training control
+train_control <- trainControl(method = "repeatedcv",
+                              number = 5,
+                              repeats = 5,
+                              search = "random",
+                              verboseIter = F)
+
+# Train the model
+elastic_net_model <- train(Powerall ~ .,
+                           data = data_enet,
+                           method = "glmnet",
+                           preProcess = c("center", "scale"),
+                           tuneLength = 25,
+                           trControl = train_control)
+plot(elastic_net_model)
+
+# Check multiple R-squared
+y_hat_enet <- predict(elastic_net_model, (testing.data[,-ncol(testing.data)] %>% as.matrix()))
+rsq_enet <- cor(y.test, y_hat_enet)^2
+ssr_enet <- RMSE(y.test,y_hat_enet)
+```
+
+```{r}
+rsq <- cbind("R-squared" = c(rsq_ridge_cv, rsq_lasso_cv ,rsq_lasso_cv), "RMSE" = c(ssr_ridge_cv, ssr_lasso_cv, ssr_enet))
+rownames(rsq) <- c("ridge cross-validated", "lasso cross-validated", "elastic net")
+print(rsq)
+```
+
+## Polynomial model
+```{r}
+library(car)
+devAskNewPage(ask = FALSE)
+crPlots(model = regmod.ade,layout = c(2,2),ask = F)
+```
+
+```{r}
+avPlots(model = regmod.ade, ask = F)
+```
+
+```{r why_choose_2_as_power, message=FALSE}
+library(ggpubr)
+q1 <- ggplot(training.data) +
+ aes(x = D_1, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+q2 <- ggplot(training.data) +
+ aes(x = D_2, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+q3 <- ggplot(training.data) +
+ aes(x = D_3, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+q4 <- ggplot(training.data) +
+ aes(x = D_4, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+q5 <- ggplot(training.data) +
+ aes(x = D_5, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+q6 <- ggplot(training.data) +
+ aes(x = D_6, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+q7 <- ggplot(training.data) +
+ aes(x = D_7, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+q8 <- ggplot(training.data) +
+ aes(x = D_8, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+q9 <- ggplot(training.data) +
+ aes(x = D_9, y = Powerall) +
+ geom_point(size = 0.5L, colour = "#0c4c8a") +
+ geom_smooth(colour = "red") +
+ theme_minimal()
+ggarrange(plotlist = list(q1,q2,q3,q4,q5,q6,q7,q8,q9), 
+          ncol = 3, nrow = 3)
+```
+
+
+```{r}
+reg.poly <- lm(Powerall~poly(D_1, degree=2, raw=TRUE) +
+     poly(D_2, degree=2, raw=TRUE) +
+     poly(D_3, degree=2, raw=TRUE) +
+     poly(D_4, degree=2, raw=TRUE) +
+     poly(D_5, degree=2, raw=TRUE) +
+     poly(D_6, degree=2, raw=TRUE) +
+     poly(D_7, degree=2, raw=TRUE) +
+     poly(D_8, degree=2, raw=TRUE) +
+     poly(D_9, degree=2, raw=TRUE) +
+     poly(D_10, degree=2, raw=TRUE) +
+     poly(D_11, degree=2, raw=TRUE) +
+     poly(D_12, degree=2, raw=TRUE) +
+     poly(D_13, degree=2, raw=TRUE) +
+     poly(D_14, degree=2, raw=TRUE) +
+     poly(D_15, degree=2, raw=TRUE) +
+     poly(D_16, degree=2, raw=TRUE) +
+     poly(P_1, degree=2, raw=TRUE) +
+     poly(P_2, degree=2, raw=TRUE) +
+     poly(P_3, degree=2, raw=TRUE) +
+     poly(P_4, degree=2, raw=TRUE) +
+     poly(P_5, degree=2, raw=TRUE) +
+     poly(P_6, degree=2, raw=TRUE) +
+     poly(P_7, degree=2, raw=TRUE) +
+     poly(P_8, degree=2, raw=TRUE) +
+     poly(P_9, degree=2, raw=TRUE) +
+     poly(P_10, degree=2, raw=TRUE) +
+     poly(P_11, degree=2, raw=TRUE) +
+     poly(P_12, degree=2, raw=TRUE) +
+     poly(P_13, degree=2, raw=TRUE) +
+     poly(P_14, degree=2, raw=TRUE) +
+     poly(P_15, degree=2, raw=TRUE) +
+     poly(P_16, degree=2, raw=TRUE),data = training.data)
+
+summary(reg.poly)
+
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(reg.poly)
+```
+
+We removed the abnormal points to improve the accuracy
+
+```{r}
+rm.points <- c("61278","61303","30519")
+training.data <- training.data[-which(rownames(training.data)%in%rm.points),]
+```
+
+```{r}
+time <- 2
+
+
+my.formula <- "Powerall ~"
+for (line in c("D","P")) {
+  for (nb in 1:16) {
+    for (t in 1:time) {
+      add <- ifelse(t==1,
+                    yes = paste(line,nb,sep = "_"),
+                    no = paste("I(",paste(paste(line,nb,sep = "_"),ifelse(t==1,"",paste("^",time,sep = "")),sep = ""),")",sep = ""))
+      my.formula <- append(my.formula, add)
+    }
+        if(nb!=16){
+          my.formula <- append(my.formula, paste(paste(line,nb,sep = "_"),paste(line,nb+1,sep = "_"),sep = ":"))
+      }
+  }
+}
+
+ 
+
+paste(my.formula[1],paste(my.formula[-1],collapse = " + "))
+```
+
+
+```{r}
+reg.poly2 <- lm(Powerall ~ D_1 + I(D_1^2) + D_1:D_2 + D_2 + I(D_2^2) + D_2:D_3 + D_3 + I(D_3^2) + D_3:D_4 + D_4 + I(D_4^2) + D_4:D_5 + D_5 + I(D_5^2) + D_5:D_6 + D_6 + I(D_6^2) + D_6:D_7 + D_7 + I(D_7^2) + D_7:D_8 + D_8 + I(D_8^2) + D_8:D_9 + D_9 + I(D_9^2) + D_9:D_10 + D_10 + I(D_10^2) + D_10:D_11 + D_11 + I(D_11^2) + D_11:D_12 + D_12 + I(D_12^2) + D_12:D_13 + D_13 + I(D_13^2) + D_13:D_14 + D_14 + I(D_14^2) + D_14:D_15 + D_15 + I(D_15^2) + D_15:D_16 + D_16 + I(D_16^2) + P_1 + I(P_1^2) + P_1:P_2 + P_2 + I(P_2^2) + P_2:P_3 + P_3 + I(P_3^2) + P_3:P_4 + P_4 + I(P_4^2) + P_4:P_5 + P_5 + I(P_5^2) + P_5:P_6 + P_6 + I(P_6^2) + P_6:P_7 + P_7 + I(P_7^2) + P_7:P_8 + P_8 + I(P_8^2) + P_8:P_9 + P_9 + I(P_9^2) + P_9:P_10 + P_10 + I(P_10^2) + P_10:P_11 + P_11 + I(P_11^2) + P_11:P_12 + P_12 + I(P_12^2) + P_12:P_13 + P_13 + I(P_13^2) + P_13:P_14 + P_14 + I(P_14^2) + P_14:P_15 + P_15 + I(P_15^2) + P_15:P_16 + P_16 + I(P_16^2),data = training.data)
+
+summary(reg.poly2)
+
+plot(reg.poly2,which = 1)
+```
+
+http://www.sthda.com/english/articles/38-regression-model-validation/157-cross-validation-essentials-in-r/
+```{r 10-fold_cross_validation}
+# Define training control
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+model <- train(Powerall ~ D_1 + I(D_1^2) + D_1:D_2 + D_2 + I(D_2^2) + D_2:D_3 + D_3 + I(D_3^2) + D_3:D_4 + D_4 + I(D_4^2) + D_4:D_5 + D_5 + I(D_5^2) + D_5:D_6 + D_6 + I(D_6^2) + D_6:D_7 + D_7 + I(D_7^2) + D_7:D_8 + D_8 + I(D_8^2) + D_8:D_9 + D_9 + I(D_9^2) + D_9:D_10 + D_10 + I(D_10^2) + D_10:D_11 + D_11 + I(D_11^2) + D_11:D_12 + D_12 + I(D_12^2) + D_12:D_13 + D_13 + I(D_13^2) + D_13:D_14 + D_14 + I(D_14^2) + D_14:D_15 + D_15 + I(D_15^2) + D_15:D_16 + D_16 + I(D_16^2) + P_1 + I(P_1^2) + P_1:P_2 + P_2 + I(P_2^2) + P_2:P_3 + P_3 + I(P_3^2) + P_3:P_4 + P_4 + I(P_4^2) + P_4:P_5 + P_5 + I(P_5^2) + P_5:P_6 + P_6 + I(P_6^2) + P_6:P_7 + P_7 + I(P_7^2) + P_7:P_8 + P_8 + I(P_8^2) + P_8:P_9 + P_9 + I(P_9^2) + P_9:P_10 + P_10 + I(P_10^2) + P_10:P_11 + P_11 + I(P_11^2) + P_11:P_12 + P_12 + I(P_12^2) + P_12:P_13 + P_13 + I(P_13^2) + P_13:P_14 + P_14 + I(P_14^2) + P_14:P_15 + P_15 + I(P_15^2) + P_15:P_16 + P_16 + I(P_16^2),
+               data = Data_ade, 
+               method = "lm",
+               trControl = train.control)
+# Summarize the results
+print(model)
+RMSE(obs = testing.data$Powerall, pred = predict(regmod.ade, testing.data[,-ncol(testing.data)]))
+
+
+```
+
+
